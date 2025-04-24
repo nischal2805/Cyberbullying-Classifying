@@ -38,7 +38,7 @@ except:
                     'in', 'out', 'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once'])
 
 # Path to your saved model
-MODEL_PATH = "final_model"
+MODEL_PATH = "boss2805/cyberbully"
 TOKENIZER_NAME = "distilbert-base-uncased"  # The base tokenizer for your model
 
 # Define the class labels (from your confusion matrix)
