@@ -6,17 +6,23 @@ import os
 import sys
 import base64
 from io import BytesIO
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Import custom modules
 from auth import login, signup, get_user_data, update_profile
 from database import create_post, get_all_posts, create_comment, get_post_comments
 from detector import detect_cyberbullying
+from api_client import get_detailed_classification, classify_with_gemini
 
 # Page configuration
 st.set_page_config(
     page_title="CyberGuard Social",
     page_icon="🛡️",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 # Load CSS

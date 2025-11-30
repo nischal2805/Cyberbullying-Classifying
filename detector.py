@@ -1,13 +1,10 @@
-import pickle
-import pandas as pd
-import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
 import re
-import nltk
-import ssl
 import os
+import ssl
+import nltk
 import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from api_client import classify_with_api
 
 # SSL workaround for NLTK downloads
 try:
@@ -59,51 +56,56 @@ except Exception as e:
 
 def preprocess_text(text):
     """Clean and preprocess text for model input."""
-    # Convert to lowercase
     text = text.lower()
-    # Remove special characters and numbers
     text = re.sub(r'[^a-zA-Z\s]', '', text)
-    # Remove extra whitespace
     text = re.sub(r'\s+', ' ', text).strip()
-    # Remove stopwords
     text = ' '.join([word for word in text.split() if word not in STOPWORDS])
     return text
 
-def detect_cyberbullying(text):
-    """
-    Detect if text contains cyberbullying content using the trained transformer model.
-    Returns a tuple: (is_bullying, bullying_type)
-    """
+def _predict_local_label(text: str) -> str:
+    """Return the local model's predicted label (string)."""
     if model is None or tokenizer is None:
-        # If model isn't loaded, return safe default
-        print("Model not loaded, returning default")
-        return False, None
-    
+        raise RuntimeError("Local model is not loaded")
+
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True).to(device)
+    with torch.no_grad():
+        outputs = model(**inputs)
+        predictions = torch.nn.functional.softmax(outputs.logits, dim=-1)
+        predicted_class_id = torch.argmax(predictions, dim=-1).item()
+
+    return CLASS_LABELS[predicted_class_id]
+
+
+def detect_cyberbullying(text: str):
+    """Detect cyberbullying by combining local model and external API.
+
+    Flow:
+    - Run the local Hugging Face model to get an initial label.
+    - If a remote API is configured (env `CLASSIFIER_API_URL`), call it with the text.
+      If the API responds with a category, use that category as the final label.
+    - If the API is not configured or fails, fall back to the local model label.
+
+    Returns (is_bullying: bool, bullying_type: Optional[str]) preserving the
+    original function signature used by `app.py`.
+    """
     try:
-        # Tokenize the input text
-        inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True).to(device)
-        
-        # Make prediction
-        with torch.no_grad():
-            outputs = model(**inputs)
-            predictions = torch.nn.functional.softmax(outputs.logits, dim=-1)
-            predicted_class_id = torch.argmax(predictions, dim=-1).item()
-        
-        # Get the predicted label
-        predicted_label = CLASS_LABELS[predicted_class_id]
-        
-        # Determine if it's bullying (anything not "Not Cyberbullying")
-        is_bullying = predicted_label != "Not Cyberbullying"
-        bullying_type = predicted_label.lower() if is_bullying else None
-        
-        print(f"Text: '{text}'")
-        print(f"Prediction: {predicted_label} (is_bullying={is_bullying}, type={bullying_type})")
-        
-        return is_bullying, bullying_type
-        
+        local_label = _predict_local_label(text)
     except Exception as e:
-        print(f"Error during prediction: {e}")
-        return False, None
+        print(f"Local prediction failed: {e}")
+        local_label = "Not Cyberbullying"
+
+    # Try remote API classifier; it should return a category string or None
+    api_label = classify_with_api(text)
+
+    final_label = api_label if api_label is not None else local_label
+
+    is_bullying = (final_label != "Not Cyberbullying")
+    bullying_type = final_label.lower() if is_bullying else None
+
+    print(f"Text: '{text}'")
+    print(f"Local label: {local_label}; API label: {api_label}; Final: {final_label}")
+
+    return is_bullying, bullying_type
 
 # Test the detector directly if run as standalone script
 if __name__ == "__main__":

@@ -1,6 +1,51 @@
-﻿__pycache__/
+﻿# Python
+__pycache__/
 *.pyc
 *.pyo
+*.pyd
+.Python
+*.so
 .ipynb_checkpoints/
+
+# Virtual environments
 .venv/
+venv/
+ENV/
+env/
+
+# Environment variables
 .env
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node.js / Frontend
+node_modules/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+.next/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Model cache
+.cache/
+models/
+
+# Misc
+*.bak
+*.tmp
