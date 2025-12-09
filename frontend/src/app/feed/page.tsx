@@ -1,148 +1,223 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Shield, Send, MessageCircle, Heart, AlertTriangle, 
-  LogOut, User, PlusCircle, X, Loader2
-} from 'lucide-react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import axios from 'axios';
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
+import axios from "axios";
+import {
+  Send,
+  MessageCircle,
+  Shield,
+  AlertTriangle,
+  LogOut,
+  User,
+  Heart,
+  Trash2,
+  Search,
+  X,
+  Star,
+  Users,
+} from "lucide-react";
 
 interface UserData {
-  id: string;
+  uid: string;
   email: string;
-  username: string;
-  reputation_score: number;
-  is_banned: boolean;
-}
-
-interface Post {
-  id: string;
-  user_id: string;
-  username: string;
-  content: string;
-  image_url: string | null;
-  timestamp: string;
-  likes: number;
-  comments_count: number;
+  displayName?: string;
+  reputation?: number;
 }
 
 interface Comment {
   id: string;
-  user_id: string;
-  username: string;
+  userId: string;
+  userName: string;
   content: string;
   timestamp: string;
-  is_bullying: boolean;
-  bullying_type: string | null;
+  isBullying: boolean;
+  bullyingType?: string;
+  confidence?: number;
 }
+
+interface Post {
+  id: string;
+  userId: string;
+  userName: string;
+  content: string;
+  timestamp: string;
+  isBullying: boolean;
+  bullyingType?: string;
+  confidence?: number;
+  likes: string[];
+  commentCount: number;
+}
+
+interface SearchResult {
+  uid: string;
+  email: string;
+  displayName?: string;
+  reputation?: number;
+}
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function FeedPage() {
   const router = useRouter();
   const [user, setUser] = useState<UserData | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [showNewPost, setShowNewPost] = useState(false);
-  const [newPostContent, setNewPostContent] = useState('');
-  const [isPosting, setIsPosting] = useState(false);
-  const [expandedPost, setExpandedPost] = useState<string | null>(null);
+  const [newPost, setNewPost] = useState("");
+  const [loading, setLoading] = useState(false);
   const [comments, setComments] = useState<{ [key: string]: Comment[] }>({});
   const [newComment, setNewComment] = useState<{ [key: string]: string }>({});
-  const [commentWarning, setCommentWarning] = useState<string | null>(null);
+  const [expandedPost, setExpandedPost] = useState<string | null>(null);
+  const [loadingComments, setLoadingComments] = useState<{ [key: string]: boolean }>({});
+  
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
 
-  useEffect(() => {
-    // Check auth
-    const token = localStorage.getItem('token');
-    const userData = localStorage.getItem('user');
-    
-    if (!token || !userData) {
-      router.push('/login');
+  // Fetch fresh user data from API on mount
+  const fetchUserData = useCallback(async () => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      router.push("/login");
       return;
     }
-    
-    setUser(JSON.parse(userData));
-    fetchPosts();
+
+    try {
+      const response = await axios.get(`${API_BASE}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const userData = response.data;
+      setUser(userData);
+      localStorage.setItem("user", JSON.stringify(userData));
+    } catch (error) {
+      console.error("Failed to fetch user data:", error);
+      // Try to use cached data if API fails
+      const storedUser = localStorage.getItem("user");
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
+      } else {
+        router.push("/login");
+      }
+    }
   }, [router]);
 
-  const fetchPosts = async () => {
+  useEffect(() => {
+    fetchUserData();
+  }, [fetchUserData]);
+
+  const fetchPosts = useCallback(async () => {
     try {
-      const response = await axios.get('/api/posts');
-      setPosts(response.data);
-    } catch (err) {
-      console.error('Failed to fetch posts:', err);
-    } finally {
-      setIsLoading(false);
+      const token = localStorage.getItem("token");
+      const response = await axios.get(`${API_BASE}/api/posts`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setPosts(response.data.posts || []);
+    } catch (error) {
+      console.error("Failed to fetch posts:", error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      fetchPosts();
+    }
+  }, [user, fetchPosts]);
 
   const fetchComments = async (postId: string) => {
+    setLoadingComments((prev) => ({ ...prev, [postId]: true }));
     try {
-      const response = await axios.get(`/api/posts/${postId}/comments`);
-      setComments(prev => ({ ...prev, [postId]: response.data }));
-    } catch (err) {
-      console.error('Failed to fetch comments:', err);
+      const token = localStorage.getItem("token");
+      const response = await axios.get(`${API_BASE}/api/posts/${postId}/comments`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setComments((prev) => ({ ...prev, [postId]: response.data.comments || [] }));
+    } catch (error) {
+      console.error("Failed to fetch comments:", error);
+    } finally {
+      setLoadingComments((prev) => ({ ...prev, [postId]: false }));
     }
   };
 
-  const handleCreatePost = async () => {
-    if (!newPostContent.trim()) return;
-    
-    setIsPosting(true);
+  const handleSubmitPost = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPost.trim() || !user) return;
+
+    setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      await axios.post('/api/posts', 
-        { content: newPostContent },
+      const token = localStorage.getItem("token");
+      await axios.post(
+        `${API_BASE}/api/posts`,
+        { content: newPost },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setNewPostContent('');
-      setShowNewPost(false);
+      setNewPost("");
       fetchPosts();
-    } catch (err) {
-      console.error('Failed to create post:', err);
+      // Refresh user data to get updated reputation
+      fetchUserData();
+    } catch (error) {
+      console.error("Failed to create post:", error);
     } finally {
-      setIsPosting(false);
+      setLoading(false);
     }
   };
 
   const handleAddComment = async (postId: string) => {
-    const content = newComment[postId];
-    if (!content?.trim()) return;
+    const commentText = newComment[postId];
+    if (!commentText?.trim() || !user) return;
 
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.post(
-        `/api/posts/${postId}/comments`,
-        { post_id: postId, content },
+      const token = localStorage.getItem("token");
+      await axios.post(
+        `${API_BASE}/api/posts/${postId}/comments`,
+        { content: commentText },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-
-      // Check if comment was flagged
-      if (response.data.is_bullying) {
-        setCommentWarning(`Your comment was flagged as "${response.data.bullying_type}" content. This affects your reputation score.`);
-        setTimeout(() => setCommentWarning(null), 5000);
-        
-        // Update user reputation locally
-        if (user) {
-          const newScore = Math.max(0, user.reputation_score - 0.5);
-          setUser({ ...user, reputation_score: newScore });
-          localStorage.setItem('user', JSON.stringify({ ...user, reputation_score: newScore }));
-        }
-      }
-
-      setNewComment(prev => ({ ...prev, [postId]: '' }));
+      setNewComment((prev) => ({ ...prev, [postId]: "" }));
       fetchComments(postId);
-      fetchPosts(); // Refresh comment count
-    } catch (err) {
-      console.error('Failed to add comment:', err);
+      fetchPosts();
+      // Refresh user data to get updated reputation
+      fetchUserData();
+    } catch (error) {
+      console.error("Failed to add comment:", error);
+    }
+  };
+
+  const handleDeleteComment = async (postId: string, commentId: string) => {
+    if (!confirm("Are you sure you want to delete this comment?")) return;
+    
+    try {
+      const token = localStorage.getItem("token");
+      await axios.delete(`${API_BASE}/api/posts/${postId}/comments/${commentId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      fetchComments(postId);
+      fetchPosts();
+    } catch (error) {
+      console.error("Failed to delete comment:", error);
+      alert("Failed to delete comment. You can only delete your own comments.");
+    }
+  };
+
+  const handleLikePost = async (postId: string) => {
+    try {
+      const token = localStorage.getItem("token");
+      await axios.post(
+        `${API_BASE}/api/posts/${postId}/like`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      fetchPosts();
+    } catch (error) {
+      console.error("Failed to like post:", error);
     }
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    router.push('/login');
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    router.push("/login");
   };
 
   const toggleComments = (postId: string) => {
@@ -156,279 +231,448 @@ export default function FeedPage() {
     }
   };
 
-  const formatDate = (isoString: string) => {
-    const date = new Date(isoString);
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+  // Search users function
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    
+    setSearchLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(`${API_BASE}/api/users/search`, {
+        params: { q: searchQuery },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setSearchResults(response.data.users || []);
+    } catch (error) {
+      console.error("Failed to search users:", error);
+      setSearchResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
   };
 
-  if (isLoading) {
+  const getReputationColor = (reputation: number) => {
+    if (reputation >= 80) return "text-green-400";
+    if (reputation >= 60) return "text-yellow-400";
+    if (reputation >= 40) return "text-orange-400";
+    return "text-red-400";
+  };
+
+  const getReputationBadge = (reputation: number) => {
+    if (reputation >= 90) return { label: "Excellent", color: "bg-green-500" };
+    if (reputation >= 70) return { label: "Good", color: "bg-blue-500" };
+    if (reputation >= 50) return { label: "Fair", color: "bg-yellow-500" };
+    if (reputation >= 30) return { label: "Poor", color: "bg-orange-500" };
+    return { label: "Critical", color: "bg-red-500" };
+  };
+
+  if (!user) {
     return (
-      <div className="min-h-screen bg-dark-900 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-accent-primary animate-spin" />
+      <div className="min-h-screen animated-bg flex items-center justify-center">
+        <div className="floating-orb orb-1"></div>
+        <div className="floating-orb orb-2"></div>
+        <div className="floating-orb orb-3"></div>
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+          className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full"
+        />
       </div>
     );
   }
 
+  const badge = getReputationBadge(user.reputation || 100);
+
   return (
-    <div className="min-h-screen bg-dark-900">
-      {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 bg-dark-900/80 backdrop-blur-xl border-b border-dark-500/50">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <Link href="/" className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-accent-gradient">
-                <Shield className="w-6 h-6 text-white" />
+    <div className="min-h-screen animated-bg relative overflow-hidden">
+      {/* Animated Background Orbs */}
+      <div className="floating-orb orb-1"></div>
+      <div className="floating-orb orb-2"></div>
+      <div className="floating-orb orb-3"></div>
+      <div className="floating-orb orb-4"></div>
+      <div className="floating-orb orb-5"></div>
+      <div className="floating-orb orb-6"></div>
+
+      {/* Header */}
+      <header className="sticky top-0 z-50 glass-card border-b border-white/10">
+        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Shield className="w-8 h-8 text-purple-400" />
+            <h1 className="text-xl font-bold gradient-text">SafeSpace</h1>
+          </div>
+
+          <div className="flex items-center gap-4">
+            {/* Search Button */}
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowSearch(!showSearch)}
+              className="p-2 rounded-lg glass-card hover:bg-white/10 transition-colors"
+            >
+              <Search className="w-5 h-5 text-gray-300" />
+            </motion.button>
+
+            {/* User Info */}
+            <div className="flex items-center gap-3 glass-card px-4 py-2 rounded-xl">
+              <div className="flex items-center gap-2">
+                <User className="w-5 h-5 text-purple-400" />
+                <span className="text-white font-medium">
+                  {user.displayName || user.email?.split("@")[0]}
+                </span>
               </div>
-              <span className="text-xl font-display font-bold gradient-text">CyberGuard</span>
-            </Link>
-            
-            <div className="flex items-center gap-4">
-              <Link href="/detector" className="text-gray-400 hover:text-white transition-colors">
-                Detector
-              </Link>
-              
-              {/* User Info */}
-              <Link 
-                href="/profile"
-                className="flex items-center gap-3 px-4 py-2 rounded-xl bg-dark-700 border border-dark-500 hover:border-accent-primary/50 transition-colors"
-              >
-                <div className="w-8 h-8 rounded-full bg-accent-gradient flex items-center justify-center">
-                  <User className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold">{user?.username}</p>
-                  <p className="text-xs text-gray-500">Rep: {user?.reputation_score}/10</p>
-                </div>
-              </Link>
-              
-              <button
-                onClick={handleLogout}
-                className="p-2 rounded-lg bg-dark-700 hover:bg-dark-600 transition-colors"
-                title="Logout"
-              >
-                <LogOut className="w-5 h-5 text-gray-400" />
-              </button>
+              <div className="flex items-center gap-1">
+                <Star className="w-4 h-4 text-yellow-400" />
+                <span className={`font-bold ${getReputationColor(user.reputation || 100)}`}>
+                  {user.reputation || 100}
+                </span>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${badge.color} text-white ml-1`}>
+                  {badge.label}
+                </span>
+              </div>
             </div>
+
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleLogout}
+              className="p-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 transition-colors"
+            >
+              <LogOut className="w-5 h-5 text-red-400" />
+            </motion.button>
           </div>
         </div>
-      </nav>
+      </header>
 
-      {/* Warning Toast */}
+      {/* Search Modal */}
       <AnimatePresence>
-        {commentWarning && (
+        {showSearch && (
           <motion.div
-            initial={{ opacity: 0, y: -50 }}
+            initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -50 }}
-            className="fixed top-24 left-1/2 -translate-x-1/2 z-50 px-6 py-4 rounded-xl bg-red-500/20 border border-red-500/50 text-red-400 max-w-md"
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-md px-4"
           >
-            {commentWarning}
+            <div className="glass-card rounded-2xl p-4 border border-white/20">
+              <div className="flex items-center gap-2 mb-4">
+                <Users className="w-5 h-5 text-purple-400" />
+                <h3 className="text-lg font-semibold text-white">Search Users</h3>
+                <button
+                  onClick={() => {
+                    setShowSearch(false);
+                    setSearchResults([]);
+                    setSearchQuery("");
+                  }}
+                  className="ml-auto p-1 hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5 text-gray-400" />
+                </button>
+              </div>
+
+              <div className="flex gap-2 mb-4">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                  placeholder="Search by name or email..."
+                  className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handleSearch}
+                  disabled={searchLoading}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-xl text-white font-medium transition-colors disabled:opacity-50"
+                >
+                  {searchLoading ? "..." : <Search className="w-5 h-5" />}
+                </motion.button>
+              </div>
+
+              {/* Search Results */}
+              <div className="max-h-64 overflow-y-auto space-y-2">
+                {searchResults.length > 0 ? (
+                  searchResults.map((result) => {
+                    const userBadge = getReputationBadge(result.reputation || 100);
+                    return (
+                      <div
+                        key={result.uid}
+                        className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+                            <span className="text-white font-bold">
+                              {(result.displayName || result.email)?.[0]?.toUpperCase()}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="text-white font-medium">
+                              {result.displayName || result.email?.split("@")[0]}
+                            </p>
+                            <p className="text-gray-400 text-sm">{result.email}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Star className="w-4 h-4 text-yellow-400" />
+                          <span className={`font-bold ${getReputationColor(result.reputation || 100)}`}>
+                            {result.reputation || 100}
+                          </span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${userBadge.color} text-white`}>
+                            {userBadge.label}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : searchQuery && !searchLoading ? (
+                  <p className="text-center text-gray-400 py-4">No users found</p>
+                ) : null}
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className="pt-24 pb-12 px-6">
-        <div className="max-w-2xl mx-auto">
-          {/* Create Post Button */}
-          <motion.button
-            onClick={() => setShowNewPost(true)}
-            className="w-full card p-4 mb-6 flex items-center gap-4 hover:border-accent-primary/50 transition-colors"
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.99 }}
-          >
-            <div className="w-10 h-10 rounded-full bg-accent-gradient flex items-center justify-center">
-              <PlusCircle className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-gray-400">What's on your mind?</span>
-          </motion.button>
-
-          {/* New Post Modal */}
-          <AnimatePresence>
-            {showNewPost && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6"
-                onClick={() => setShowNewPost(false)}
+      <main className="max-w-4xl mx-auto px-4 py-8 relative z-10">
+        {/* Create Post */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card rounded-2xl p-6 mb-8 border border-white/10"
+        >
+          <form onSubmit={handleSubmitPost}>
+            <textarea
+              value={newPost}
+              onChange={(e) => setNewPost(e.target.value)}
+              placeholder="What's on your mind? Share something positive..."
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none h-24"
+            />
+            <div className="flex justify-between items-center mt-4">
+              <p className="text-sm text-gray-400">
+                <Shield className="w-4 h-4 inline mr-1" />
+                Your post will be analyzed for harmful content
+              </p>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                type="submit"
+                disabled={loading || !newPost.trim()}
+                className="px-6 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl text-white font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <motion.div
-                  initial={{ scale: 0.9, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.9, opacity: 0 }}
-                  className="w-full max-w-lg card p-6"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xl font-display font-bold">Create Post</h3>
-                    <button
-                      onClick={() => setShowNewPost(false)}
-                      className="p-2 rounded-lg hover:bg-dark-600 transition-colors"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
-                  
-                  <textarea
-                    value={newPostContent}
-                    onChange={(e) => setNewPostContent(e.target.value)}
-                    placeholder="Share your thoughts..."
-                    className="input-field h-32 resize-none mb-4"
-                    autoFocus
+                {loading ? (
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                    className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
                   />
-                  
-                  <div className="flex justify-end gap-3">
-                    <button
-                      onClick={() => setShowNewPost(false)}
-                      className="btn-secondary"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleCreatePost}
-                      disabled={isPosting || !newPostContent.trim()}
-                      className="btn-primary flex items-center gap-2"
-                    >
-                      {isPosting ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <>
-                          <Send className="w-5 h-5" />
-                          Post
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Posts */}
-          {posts.length === 0 ? (
-            <div className="card p-12 text-center">
-              <p className="text-gray-400 mb-4">No posts yet. Be the first to share something!</p>
-              <button
-                onClick={() => setShowNewPost(true)}
-                className="btn-primary"
-              >
-                Create First Post
-              </button>
+                ) : (
+                  <>
+                    <Send className="w-5 h-5" />
+                    Post
+                  </>
+                )}
+              </motion.button>
             </div>
-          ) : (
-            <div className="space-y-6">
-              {posts.map((post, index) => (
-                <motion.div
-                  key={post.id}
-                  className="card p-6"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                >
-                  {/* Post Header */}
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-full bg-accent-gradient flex items-center justify-center">
-                      <span className="text-white font-semibold">
-                        {post.username.charAt(0).toUpperCase()}
+          </form>
+        </motion.div>
+
+        {/* Posts Feed */}
+        <div className="space-y-6">
+          <AnimatePresence>
+            {posts.map((post, index) => (
+              <motion.div
+                key={post.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ delay: index * 0.1 }}
+                className={`glass-card rounded-2xl p-6 border ${
+                  post.isBullying ? "border-red-500/50" : "border-white/10"
+                }`}
+              >
+                {/* Post Header */}
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+                      <span className="text-white font-bold text-lg">
+                        {post.userName?.[0]?.toUpperCase() || "U"}
                       </span>
                     </div>
                     <div>
-                      <p className="font-semibold">{post.username}</p>
-                      <p className="text-xs text-gray-500">{formatDate(post.timestamp)}</p>
+                      <p className="text-white font-medium">{post.userName}</p>
+                      <p className="text-gray-400 text-sm">
+                        {new Date(post.timestamp).toLocaleDateString()}
+                      </p>
                     </div>
                   </div>
+                  {post.isBullying && (
+                    <div className="flex items-center gap-2 px-3 py-1 bg-red-500/20 rounded-full">
+                      <AlertTriangle className="w-4 h-4 text-red-400" />
+                      <span className="text-red-400 text-sm font-medium">
+                        {post.bullyingType || "Harmful"}
+                      </span>
+                    </div>
+                  )}
+                </div>
 
-                  {/* Post Content */}
-                  <p className="text-gray-300 mb-4">{post.content}</p>
+                {/* Post Content */}
+                <p className="text-white mb-4 whitespace-pre-wrap">{post.content}</p>
 
-                  {/* Post Actions */}
-                  <div className="flex items-center gap-4 pt-4 border-t border-dark-500">
-                    <button className="flex items-center gap-2 text-gray-400 hover:text-red-400 transition-colors">
-                      <Heart className="w-5 h-5" />
-                      <span className="text-sm">{post.likes}</span>
-                    </button>
-                    <button
-                      onClick={() => toggleComments(post.id)}
-                      className={`flex items-center gap-2 transition-colors ${
-                        expandedPost === post.id ? 'text-accent-primary' : 'text-gray-400 hover:text-accent-primary'
+                {/* Post Actions */}
+                <div className="flex items-center gap-4 pt-4 border-t border-white/10">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => handleLikePost(post.id)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-colors ${
+                      post.likes?.includes(user.uid)
+                        ? "bg-pink-500/20 text-pink-400"
+                        : "bg-white/5 text-gray-400 hover:bg-white/10"
+                    }`}
+                  >
+                    <Heart
+                      className={`w-5 h-5 ${
+                        post.likes?.includes(user.uid) ? "fill-current" : ""
                       }`}
-                    >
-                      <MessageCircle className="w-5 h-5" />
-                      <span className="text-sm">{post.comments_count}</span>
-                    </button>
-                  </div>
+                    />
+                    <span>{post.likes?.length || 0}</span>
+                  </motion.button>
 
-                  {/* Comments Section */}
-                  <AnimatePresence>
-                    {expandedPost === post.id && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="mt-4 pt-4 border-t border-dark-500 overflow-hidden"
-                      >
-                        {/* Comments List */}
-                        <div className="space-y-3 mb-4">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => toggleComments(post.id)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 text-gray-400 hover:bg-white/10 transition-colors"
+                  >
+                    <MessageCircle className="w-5 h-5" />
+                    <span>{post.commentCount || 0}</span>
+                  </motion.button>
+                </div>
+
+                {/* Comments Section */}
+                <AnimatePresence>
+                  {expandedPost === post.id && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="mt-4 pt-4 border-t border-white/10"
+                    >
+                      {/* Add Comment */}
+                      <div className="flex gap-2 mb-4">
+                        <input
+                          type="text"
+                          value={newComment[post.id] || ""}
+                          onChange={(e) =>
+                            setNewComment((prev) => ({
+                              ...prev,
+                              [post.id]: e.target.value,
+                            }))
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              handleAddComment(post.id);
+                            }
+                          }}
+                          placeholder="Write a comment..."
+                          className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => handleAddComment(post.id)}
+                          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-xl text-white transition-colors"
+                        >
+                          <Send className="w-5 h-5" />
+                        </motion.button>
+                      </div>
+
+                      {/* Comments List */}
+                      {loadingComments[post.id] ? (
+                        <div className="flex justify-center py-4">
+                          <motion.div
+                            animate={{ rotate: 360 }}
+                            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                            className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full"
+                          />
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
                           {comments[post.id]?.map((comment) => (
                             <div
                               key={comment.id}
                               className={`p-3 rounded-xl ${
-                                comment.is_bullying 
-                                  ? 'bg-red-500/10 border border-red-500/30' 
-                                  : 'bg-dark-800'
+                                comment.isBullying
+                                  ? "bg-red-500/10 border border-red-500/30"
+                                  : "bg-white/5"
                               }`}
                             >
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-sm font-semibold">{comment.username}</span>
-                                <span className="text-xs text-gray-500">{formatDate(comment.timestamp)}</span>
-                                {comment.is_bullying && (
-                                  <span className="ml-auto flex items-center gap-1 text-xs text-red-400">
-                                    <AlertTriangle className="w-3 h-3" />
-                                    Flagged
+                              <div className="flex items-start justify-between">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center">
+                                    <span className="text-white font-bold text-sm">
+                                      {comment.userName?.[0]?.toUpperCase() || "U"}
+                                    </span>
+                                  </div>
+                                  <span className="text-white font-medium text-sm">
+                                    {comment.userName}
                                   </span>
+                                  <span className="text-gray-500 text-xs">
+                                    {new Date(comment.timestamp).toLocaleDateString()}
+                                  </span>
+                                  {comment.isBullying && (
+                                    <span className="text-xs px-2 py-0.5 bg-red-500/20 text-red-400 rounded-full">
+                                      {comment.bullyingType || "Harmful"}
+                                    </span>
+                                  )}
+                                </div>
+                                
+                                {/* Delete Button - Only show for user's own comments */}
+                                {comment.userId === user.uid && (
+                                  <motion.button
+                                    whileHover={{ scale: 1.1 }}
+                                    whileTap={{ scale: 0.9 }}
+                                    onClick={() => handleDeleteComment(post.id, comment.id)}
+                                    className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
+                                    title="Delete comment"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </motion.button>
                                 )}
                               </div>
-                              <p className="text-sm text-gray-300">{comment.content}</p>
+                              <p className="text-gray-300 text-sm ml-10">
+                                {comment.content}
+                              </p>
                             </div>
                           ))}
-                          
                           {comments[post.id]?.length === 0 && (
-                            <p className="text-sm text-gray-500 text-center py-2">
-                              No comments yet
+                            <p className="text-center text-gray-500 py-4">
+                              No comments yet. Be the first to comment!
                             </p>
                           )}
                         </div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            ))}
+          </AnimatePresence>
 
-                        {/* Add Comment */}
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={newComment[post.id] || ''}
-                            onChange={(e) => setNewComment(prev => ({ ...prev, [post.id]: e.target.value }))}
-                            placeholder="Write a comment..."
-                            className="input-field flex-1 py-2"
-                            onKeyPress={(e) => e.key === 'Enter' && handleAddComment(post.id)}
-                          />
-                          <button
-                            onClick={() => handleAddComment(post.id)}
-                            disabled={!newComment[post.id]?.trim()}
-                            className="btn-primary py-2 px-4"
-                          >
-                            <Send className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-              ))}
-            </div>
+          {posts.length === 0 && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-center py-16"
+            >
+              <MessageCircle className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-gray-400 mb-2">
+                No posts yet
+              </h3>
+              <p className="text-gray-500">
+                Be the first to share something positive!
+              </p>
+            </motion.div>
           )}
         </div>
       </main>

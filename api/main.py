@@ -471,6 +471,52 @@ async def add_comment(post_id: str, comment: CommentCreate, token_data: dict = D
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.delete("/api/posts/{post_id}/comments/{comment_id}")
+async def delete_comment(post_id: str, comment_id: str, token_data: dict = Depends(verify_token)):
+    """Delete a comment (only the comment owner can delete)"""
+    try:
+        from database import get_post_comments, delete_comment as db_delete_comment
+        
+        # Get the comment to verify ownership
+        comments = get_post_comments(post_id)
+        comment = next((c for c in comments if c.get('id') == comment_id), None)
+        
+        if not comment:
+            raise HTTPException(status_code=404, detail="Comment not found")
+        
+        # Check if user owns the comment
+        if comment.get('user_id') != token_data['sub']:
+            raise HTTPException(status_code=403, detail="You can only delete your own comments")
+        
+        # Delete the comment
+        db_delete_comment(post_id, comment_id)
+        
+        return {"message": "Comment deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# User Search Endpoints
+# ============================================
+
+@app.get("/api/users/search")
+async def search_users(q: str, token_data: dict = Depends(verify_token)):
+    """Search for users by username or email"""
+    try:
+        from database import search_users as db_search_users
+        
+        if not q or len(q) < 2:
+            return {"users": []}
+        
+        users = db_search_users(q)
+        return {"users": users}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)

@@ -57,3 +57,30 @@ def get_post_comments(post_id):
     if comments.each():
         return [{**comment.val(), "id": comment.key()} for comment in comments.each()]
     return []
+
+def delete_comment(post_id, comment_id):
+    """Delete a comment from a post"""
+    db.child("comments").child(post_id).child(comment_id).remove()
+    return True
+
+def search_users(query):
+    """Search for users by username or email"""
+    query = query.lower()
+    users = db.child("users").get()
+    results = []
+    
+    if users.each():
+        for user in users.each():
+            user_data = user.val()
+            username = user_data.get('username', '').lower()
+            email = user_data.get('email', '').lower()
+            
+            if query in username or query in email:
+                results.append({
+                    "uid": user.key(),
+                    "email": user_data.get('email'),
+                    "displayName": user_data.get('username'),
+                    "reputation": user_data.get('reputation_score', 100)
+                })
+    
+    return results[:10]  # Limit to 10 results
