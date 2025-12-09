@@ -88,7 +88,6 @@ class PostCreate(BaseModel):
     image_url: Optional[str] = None
 
 class CommentCreate(BaseModel):
-    post_id: str
     content: str
 
 class PostResponse(BaseModel):
@@ -267,7 +266,7 @@ async def get_categories():
 # Auth Endpoints (Firebase-backed)
 # ============================================
 
-@app.post("/api/auth/login", response_model=TokenResponse)
+@app.post("/api/auth/login")
 async def login_user(request: LoginRequest):
     """Authenticate user and return JWT token"""
     try:
@@ -285,23 +284,28 @@ async def login_user(request: LoginRequest):
             raise HTTPException(status_code=403, detail="Account is banned")
         
         token = create_token(user['localId'], request.email)
+        reputation_score = user_data.get('reputation_score', 10)
         
-        return TokenResponse(
-            access_token=token,
-            user=UserResponse(
-                id=user['localId'],
-                email=request.email,
-                username=user_data.get('username', 'User'),
-                reputation_score=user_data.get('reputation_score', 10),
-                is_banned=user_data.get('is_banned', False)
-            )
-        )
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "user": {
+                "id": user['localId'],
+                "uid": user['localId'],
+                "email": request.email,
+                "username": user_data.get('username', 'User'),
+                "displayName": user_data.get('username', 'User'),
+                "reputation_score": reputation_score,
+                "reputation": reputation_score * 10,  # Feed expects 0-100 scale
+                "is_banned": user_data.get('is_banned', False)
+            }
+        }
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/auth/signup", response_model=TokenResponse)
+@app.post("/api/auth/signup")
 async def signup_user(request: SignupRequest):
     """Create new user account"""
     try:
@@ -313,22 +317,26 @@ async def signup_user(request: SignupRequest):
         
         token = create_token(user['localId'], request.email)
         
-        return TokenResponse(
-            access_token=token,
-            user=UserResponse(
-                id=user['localId'],
-                email=request.email,
-                username=request.username,
-                reputation_score=10,
-                is_banned=False
-            )
-        )
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "user": {
+                "id": user['localId'],
+                "uid": user['localId'],
+                "email": request.email,
+                "username": request.username,
+                "displayName": request.username,
+                "reputation_score": 10,
+                "reputation": 100,  # 10 * 10 for feed 0-100 scale
+                "is_banned": False
+            }
+        }
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/auth/me", response_model=UserResponse)
+@app.get("/api/auth/me")
 async def get_current_user(token_data: dict = Depends(verify_token)):
     """Get current authenticated user"""
     try:
@@ -338,13 +346,19 @@ async def get_current_user(token_data: dict = Depends(verify_token)):
         if not user_data:
             raise HTTPException(status_code=404, detail="User not found")
         
-        return UserResponse(
-            id=token_data['sub'],
-            email=token_data['email'],
-            username=user_data.get('username', 'User'),
-            reputation_score=user_data.get('reputation_score', 10),
-            is_banned=user_data.get('is_banned', False)
-        )
+        reputation_score = user_data.get('reputation_score', 10)
+        
+        # Return both snake_case and camelCase for compatibility with different frontend pages
+        return {
+            "id": token_data['sub'],
+            "uid": token_data['sub'],
+            "email": token_data['email'],
+            "username": user_data.get('username', 'User'),
+            "displayName": user_data.get('username', 'User'),
+            "reputation_score": reputation_score,
+            "reputation": reputation_score * 10,  # Feed expects 0-100 scale
+            "is_banned": user_data.get('is_banned', False)
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -354,7 +368,7 @@ async def get_current_user(token_data: dict = Depends(verify_token)):
 # Posts Endpoints
 # ============================================
 
-@app.get("/api/posts", response_model=List[PostResponse])
+@app.get("/api/posts")
 async def get_posts():
     """Get all posts"""
     try:
@@ -367,23 +381,28 @@ async def get_posts():
         for post in sorted(posts, key=lambda x: x.get('timestamp', ''), reverse=True):
             user_data = get_user_data(post.get('user_id', ''))
             comments = get_post_comments(post.get('id', ''))
+            likes_list = post.get('likes', [])
+            if isinstance(likes_list, int):
+                likes_list = []
             
-            result.append(PostResponse(
-                id=post.get('id', ''),
-                user_id=post.get('user_id', ''),
-                username=user_data.get('username', 'Unknown') if user_data else 'Unknown',
-                content=post.get('content', ''),
-                image_url=post.get('image_url'),
-                timestamp=post.get('timestamp', ''),
-                likes=post.get('likes', 0),
-                comments_count=len(comments)
-            ))
+            result.append({
+                "id": post.get('id', ''),
+                "userId": post.get('user_id', ''),
+                "userName": user_data.get('username', 'Unknown') if user_data else 'Unknown',
+                "content": post.get('content', ''),
+                "imageUrl": post.get('image_url'),
+                "timestamp": post.get('timestamp', ''),
+                "likes": likes_list,
+                "commentCount": len(comments),
+                "isBullying": post.get('is_bullying', False),
+                "bullyingType": post.get('bullying_type')
+            })
         
-        return result
+        return {"posts": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/posts", response_model=PostResponse)
+@app.post("/api/posts")
 async def create_new_post(post: PostCreate, token_data: dict = Depends(verify_token)):
     """Create a new post"""
     try:
@@ -393,20 +412,22 @@ async def create_new_post(post: PostCreate, token_data: dict = Depends(verify_to
         post_id = create_post(token_data['sub'], post.content, None)
         user_data = get_user_data(token_data['sub'])
         
-        return PostResponse(
-            id=post_id,
-            user_id=token_data['sub'],
-            username=user_data.get('username', 'User') if user_data else 'User',
-            content=post.content,
-            image_url=post.image_url,
-            timestamp=datetime.utcnow().isoformat(),
-            likes=0,
-            comments_count=0
-        )
+        return {
+            "id": post_id,
+            "userId": token_data['sub'],
+            "userName": user_data.get('username', 'User') if user_data else 'User',
+            "content": post.content,
+            "imageUrl": post.image_url,
+            "timestamp": datetime.utcnow().isoformat(),
+            "likes": [],
+            "commentCount": 0,
+            "isBullying": False,
+            "bullyingType": None
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/posts/{post_id}/comments", response_model=List[CommentResponse])
+@app.get("/api/posts/{post_id}/comments")
 async def get_comments(post_id: str):
     """Get comments for a post"""
     try:
@@ -418,21 +439,21 @@ async def get_comments(post_id: str):
         
         for comment in comments:
             user_data = get_user_data(comment.get('user_id', ''))
-            result.append(CommentResponse(
-                id=comment.get('id', ''),
-                user_id=comment.get('user_id', ''),
-                username=user_data.get('username', 'Unknown') if user_data else 'Unknown',
-                content=comment.get('content', ''),
-                timestamp=comment.get('timestamp', ''),
-                is_bullying=comment.get('is_bullying', False),
-                bullying_type=comment.get('bullying_type')
-            ))
+            result.append({
+                "id": comment.get('id', ''),
+                "userId": comment.get('user_id', ''),
+                "userName": user_data.get('username', 'Unknown') if user_data else 'Unknown',
+                "content": comment.get('content', ''),
+                "timestamp": comment.get('timestamp', ''),
+                "isBullying": comment.get('is_bullying', False),
+                "bullyingType": comment.get('bullying_type')
+            })
         
-        return result
+        return {"comments": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/posts/{post_id}/comments", response_model=CommentResponse)
+@app.post("/api/posts/{post_id}/comments")
 async def add_comment(post_id: str, comment: CommentCreate, token_data: dict = Depends(verify_token)):
     """Add a comment to a post (with cyberbullying detection)"""
     try:
@@ -458,15 +479,15 @@ async def add_comment(post_id: str, comment: CommentCreate, token_data: dict = D
             from reputation import decrease_reputation
             decrease_reputation(token_data['sub'])
         
-        return CommentResponse(
-            id=comment_id,
-            user_id=token_data['sub'],
-            username=user_data.get('username', 'User') if user_data else 'User',
-            content=comment.content,
-            timestamp=datetime.utcnow().isoformat(),
-            is_bullying=is_bullying,
-            bullying_type=bullying_type
-        )
+        return {
+            "id": comment_id,
+            "userId": token_data['sub'],
+            "userName": user_data.get('username', 'User') if user_data else 'User',
+            "content": comment.content,
+            "timestamp": datetime.utcnow().isoformat(),
+            "isBullying": is_bullying,
+            "bullyingType": bullying_type
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -492,6 +513,25 @@ async def delete_comment(post_id: str, comment_id: str, token_data: dict = Depen
         db_delete_comment(post_id, comment_id)
         
         return {"message": "Comment deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/posts/{post_id}/like")
+async def toggle_like_post(post_id: str, token_data: dict = Depends(verify_token)):
+    """Toggle like on a post"""
+    try:
+        from database import toggle_like, get_post
+        
+        post = get_post(post_id)
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found")
+        
+        likes = toggle_like(post_id, token_data['sub'])
+        
+        return {"likes": likes, "liked": token_data['sub'] in likes}
     except HTTPException:
         raise
     except Exception as e:

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
 import {
@@ -312,8 +313,8 @@ export default function FeedPage() {
               <Search className="w-5 h-5 text-gray-300" />
             </motion.button>
 
-            {/* User Info */}
-            <div className="flex items-center gap-3 glass-card px-4 py-2 rounded-xl">
+            {/* User Info - Click to go to Profile */}
+            <Link href="/profile" className="flex items-center gap-3 glass-card px-4 py-2 rounded-xl hover:bg-white/10 transition-colors cursor-pointer">
               <div className="flex items-center gap-2">
                 <User className="w-5 h-5 text-purple-400" />
                 <span className="text-white font-medium">
@@ -329,7 +330,7 @@ export default function FeedPage() {
                   {badge.label}
                 </span>
               </div>
-            </div>
+            </Link>
 
             <motion.button
               whileHover={{ scale: 1.05 }}

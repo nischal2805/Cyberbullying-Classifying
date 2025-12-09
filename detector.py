@@ -2,9 +2,47 @@ import re
 import os
 import ssl
 import nltk
-import torch
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
-from api_client import classify_with_api
+
+# Simple keyword-based fallback classifier (duplicated to avoid circular imports)
+BULLYING_KEYWORDS = {
+    "Ethnicity/Race": [
+        "nigger", "negro", "chink", "gook", "spic", "wetback", "beaner",
+        "cracker", "honky", "kike", "raghead", "towelhead", "paki", "curry", 
+        "go back to your country", "illegal alien", "foreigner", "immigrant"
+    ],
+    "Gender/Sexual": [
+        "fag", "faggot", "dyke", "homo", "tranny",
+        "sissy", "queer", "slut", "whore", "bitch", "cunt", "pussy",
+        "man up", "like a girl", "women belong"
+    ],
+    "Religion": [
+        "terrorist", "jihad", "infidel", "heathen", "godless", "cult"
+    ],
+    "Other": [
+        "stupid", "idiot", "dumb", "moron", "retard", "loser", "ugly", "fat",
+        "kill yourself", "kys", "die", "hate you", "nobody likes you", "worthless",
+        "pathetic", "disgusting", "trash", "garbage", "waste of space", "freak",
+        "weirdo", "creep", "shut up", "go away", "nobody cares", "useless"
+    ]
+}
+
+def _keyword_fallback_classifier(text):
+    """Simple keyword-based classifier as fallback."""
+    text_lower = text.lower()
+    for category, keywords in BULLYING_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword.lower() in text_lower:
+                return category, f"Contains potentially harmful keyword"
+    return "Not Cyberbullying", "No harmful content detected"
+
+# Try to import torch and transformers - they may fail due to version issues
+try:
+    import torch
+    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+    TORCH_AVAILABLE = True
+except ImportError as e:
+    print(f"PyTorch/Transformers not available: {e}")
+    TORCH_AVAILABLE = False
 
 # SSL workaround for NLTK downloads
 try:
@@ -41,18 +79,23 @@ TOKENIZER_NAME = "distilbert-base-uncased"  # The base tokenizer for your model
 # Define the class labels (from your confusion matrix)
 CLASS_LABELS = ['Ethnicity/Race', 'Gender/Sexual', 'Not Cyberbullying', 'Religion']
 
-# Load model and tokenizer
-try:
-    model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
-    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
-    model.eval()  # Set model to evaluation mode
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model.to(device)
-    print("Model loaded successfully")
-except Exception as e:
-    print(f"Error loading model: {e}")
-    model = None
-    tokenizer = None
+# Load model and tokenizer only if torch is available
+model = None
+tokenizer = None
+device = None
+
+if TORCH_AVAILABLE:
+    try:
+        model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
+        tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
+        model.eval()  # Set model to evaluation mode
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        model.to(device)
+        print("Model loaded successfully")
+    except Exception as e:
+        print(f"Error loading model: {e}")
+        model = None
+        tokenizer = None
 
 def preprocess_text(text):
     """Clean and preprocess text for model input."""
@@ -64,9 +107,12 @@ def preprocess_text(text):
 
 def _predict_local_label(text: str) -> str:
     """Return the local model's predicted label (string)."""
-    if model is None or tokenizer is None:
-        raise RuntimeError("Local model is not loaded")
+    if not TORCH_AVAILABLE or model is None or tokenizer is None:
+        # Use keyword fallback when model is not available
+        label, _ = _keyword_fallback_classifier(text)
+        return label
 
+    import torch
     inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True).to(device)
     with torch.no_grad():
         outputs = model(**inputs)

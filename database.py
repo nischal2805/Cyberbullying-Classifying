@@ -16,7 +16,7 @@ def create_post(user_id, content, image=None):
         "user_id": user_id,
         "content": content,
         "timestamp": timestamp,
-        "likes": 0,
+        "likes": [],  # Changed to array to track who liked
         "image_url": None
     }
     
@@ -84,3 +84,33 @@ def search_users(query):
                 })
     
     return results[:10]  # Limit to 10 results
+
+
+def toggle_like(post_id, user_id):
+    """Toggle like on a post. Returns the updated likes array."""
+    post = db.child("posts").child(post_id).get()
+    if not post.val():
+        return None
+    
+    post_data = post.val()
+    likes = post_data.get('likes', [])
+    
+    # Handle legacy int format
+    if isinstance(likes, int):
+        likes = []
+    
+    if user_id in likes:
+        likes.remove(user_id)
+    else:
+        likes.append(user_id)
+    
+    db.child("posts").child(post_id).update({"likes": likes})
+    return likes
+
+
+def get_post(post_id):
+    """Get a single post by ID"""
+    post = db.child("posts").child(post_id).get()
+    if post.val():
+        return {**post.val(), "id": post_id}
+    return None
