@@ -70,6 +70,7 @@ export default function FeedPage() {
   const [newComment, setNewComment] = useState<{ [key: string]: string }>({});
   const [expandedPost, setExpandedPost] = useState<string | null>(null);
   const [loadingComments, setLoadingComments] = useState<{ [key: string]: boolean }>({});
+  const [submittingComment, setSubmittingComment] = useState<{ [key: string]: boolean }>({});
   
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -168,6 +169,7 @@ export default function FeedPage() {
     const commentText = newComment[postId];
     if (!commentText?.trim() || !user) return;
 
+    setSubmittingComment((prev) => ({ ...prev, [postId]: true }));
     try {
       const token = localStorage.getItem("token");
       await axios.post(
@@ -180,8 +182,12 @@ export default function FeedPage() {
       fetchPosts();
       // Refresh user data to get updated reputation
       fetchUserData();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to add comment:", error);
+      const errorMsg = error.response?.data?.detail || "Failed to post comment. Please try again.";
+      alert(errorMsg);
+    } finally {
+      setSubmittingComment((prev) => ({ ...prev, [postId]: false }));
     }
   };
 
@@ -563,20 +569,30 @@ export default function FeedPage() {
                             }))
                           }
                           onKeyDown={(e) => {
-                            if (e.key === "Enter") {
+                            if (e.key === "Enter" && !submittingComment[post.id]) {
                               handleAddComment(post.id);
                             }
                           }}
                           placeholder="Write a comment..."
-                          className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          disabled={submittingComment[post.id]}
+                          className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                         <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
+                          whileHover={{ scale: submittingComment[post.id] ? 1 : 1.05 }}
+                          whileTap={{ scale: submittingComment[post.id] ? 1 : 0.95 }}
                           onClick={() => handleAddComment(post.id)}
-                          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-xl text-white transition-colors"
+                          disabled={submittingComment[post.id] || !newComment[post.id]?.trim()}
+                          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-xl text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[56px]"
                         >
-                          <Send className="w-5 h-5" />
+                          {submittingComment[post.id] ? (
+                            <motion.div
+                              animate={{ rotate: 360 }}
+                              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                              className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
+                            />
+                          ) : (
+                            <Send className="w-5 h-5" />
+                          )}
                         </motion.button>
                       </div>
 

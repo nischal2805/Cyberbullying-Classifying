@@ -2,6 +2,15 @@ import re
 import os
 import ssl
 import nltk
+from typing import Optional
+
+# Import API client function
+try:
+    from api_client import classify_with_api
+except ImportError:
+    # Fallback if api_client is not available
+    def classify_with_api(text: str) -> Optional[str]:
+        return None
 
 # Simple keyword-based fallback classifier (duplicated to avoid circular imports)
 BULLYING_KEYWORDS = {
