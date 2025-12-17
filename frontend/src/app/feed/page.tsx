@@ -285,15 +285,7 @@ export default function FeedPage() {
   const badge = getReputationBadge(user.reputation || 100);
 
   return (
-    <div className="min-h-screen animated-bg relative overflow-hidden">
-      {/* Animated Background Orbs */}
-      <div className="floating-orb orb-1"></div>
-      <div className="floating-orb orb-2"></div>
-      <div className="floating-orb orb-3"></div>
-      <div className="floating-orb orb-4"></div>
-      <div className="floating-orb orb-5"></div>
-      <div className="floating-orb orb-6"></div>
-
+    <div className="min-h-screen animated-bg">
       {/* Header */}
       <header className="sticky top-0 z-50 glass-card border-b border-white/10">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
@@ -434,7 +426,7 @@ export default function FeedPage() {
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className="max-w-4xl mx-auto px-4 py-8 relative z-10">
+      <main className="max-w-4xl mx-auto px-4 py-8 relative z-10 pb-16">
         {/* Create Post */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
