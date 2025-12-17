@@ -20,24 +20,27 @@ VALID_CATEGORIES = [
 # Simple keyword-based fallback classifier
 BULLYING_KEYWORDS = {
     "Ethnicity/Race": [
-        "n*gger", "nigger", "negro", "chink", "gook", "spic", "wetback", "beaner",
+        "nigger", "negro", "chink", "gook", "spic", "wetback", "beaner",
         "cracker", "honky", "kike", "raghead", "towelhead", "paki", "curry", 
-        "go back to your country", "illegal alien", "foreigner", "immigrant"
+        "go back to your country", "illegal alien", "foreigner scum", "dirty immigrant"
     ],
     "Gender/Sexual": [
-        "f*g", "fag", "faggot", "dyke", "homo", "gay", "lesbian", "tranny",
+        "fag", "faggot", "dyke", "homo", "tranny",
         "sissy", "queer", "slut", "whore", "bitch", "cunt", "pussy",
-        "man up", "like a girl", "women belong"
+        "man up", "like a girl", "women belong", "hoe", "thot"
     ],
     "Religion": [
         "terrorist", "jihad", "infidel", "heathen", "godless", "cult",
-        "your religion", "your god", "muslim", "christian", "jewish", "hindu"
+        "your religion", "your god", "religious freak"
     ],
     "Other": [
-        "stupid", "idiot", "dumb", "moron", "retard", "loser", "ugly", "fat",
+        "stupid", "idiot", "dumb", "moron", "retard", "retarded", "loser", "ugly", "fat", "fatso",
         "kill yourself", "kys", "die", "hate you", "nobody likes you", "worthless",
         "pathetic", "disgusting", "trash", "garbage", "waste of space", "freak",
-        "weirdo", "creep", "shut up", "go away", "nobody cares", "useless"
+        "weirdo", "creep", "shut up", "go away", "nobody cares", "useless",
+        "dumbass", "dumba$$", "asshole", "a$$hole", "bastard", "fool", "clown",
+        "piece of shit", "pos", "scum", "filth", "disgusting person", "gross",
+        "annoying", "irritating", "hate", "despise", "can't stand you"
     ]
 }
 
@@ -46,30 +49,33 @@ def keyword_fallback_classifier(text: str) -> Tuple[Optional[str], Optional[str]
     """
     Simple keyword-based classifier as fallback when API/model fails.
     """
-    text_lower = text.lower()
+    text_lower = text.lower().strip()
+    
+    # Remove common obfuscation characters
+    text_cleaned = text_lower.replace('*', '').replace('$', 's').replace('@', 'a').replace('0', 'o')
     
     for category, keywords in BULLYING_KEYWORDS.items():
         for keyword in keywords:
-            if keyword.lower() in text_lower:
-                return category, f"Contains potentially harmful keyword"
+            keyword_lower = keyword.lower()
+            if keyword_lower in text_lower or keyword_lower in text_cleaned:
+                return category, f"Contains potentially harmful content: '{keyword}'"
     
     return "Not Cyberbullying", "No harmful content detected"
 
 
-def classify_with_gemini(text: str, timeout: int = 30, max_retries: int = 3) -> Tuple[Optional[str], Optional[str]]:
+def classify_with_groq(text: str, timeout: int = 30) -> Tuple[Optional[str], Optional[str]]:
     """
-    Classify text using Google Gemini 2.0 Flash model with retry logic.
+    Classify text using Groq API with Llama model.
     
     Returns:
         Tuple of (category, explanation) or (None, None) if API fails
     """
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        print("GEMINI_API_KEY not set, using fallback classifier")
+        print("GROQ_API_KEY not set, using fallback classifier")
         return keyword_fallback_classifier(text)
     
-    # Gemini 2.0 Flash API endpoint
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+    url = "https://api.groq.com/openai/v1/chat/completions"
     
     prompt = f"""You are a cyberbullying detection expert. Analyze the following text and determine if it contains cyberbullying content.
 
@@ -88,21 +94,24 @@ Respond with ONLY a JSON object in this exact format (no markdown, no code block
 {{"category": "category_name", "explanation": "brief reason"}}"""
 
     headers = {
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
     
     payload = {
-        "contents": [{
-            "parts": [{
-                "text": prompt
-            }]
-        }],
-        "generationConfig": {
-            "temperature": 0.1,
-            "topK": 1,
-            "topP": 1,
-            "maxOutputTokens": 256
-        }
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a cyberbullying detection expert. Respond only with valid JSON."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": 0.2,
+        "max_tokens": 256
     }
     
     try:
@@ -111,92 +120,71 @@ Respond with ONLY a JSON object in this exact format (no markdown, no code block
         
         result = response.json()
         
-        # Extract the text response from Gemini
-        if "candidates" in result and len(result["candidates"]) > 0:
-            content = result["candidates"][0].get("content", {})
-            parts = content.get("parts", [])
-            if parts:
-                response_text = parts[0].get("text", "").strip()
+        # Extract the response from Groq
+        if "choices" in result and len(result["choices"]) > 0:
+            message = result["choices"][0].get("message", {})
+            response_text = message.get("content", "").strip()
+            
+            # Clean up response - remove markdown code blocks if present
+            response_text = response_text.replace("```json", "").replace("```", "").strip()
+            
+            # Parse JSON response
+            try:
+                data = json.loads(response_text)
+                category = data.get("category", "Not Cyberbullying")
+                explanation = data.get("explanation", "")
                 
-                # Clean up response - remove markdown code blocks if present
-                response_text = response_text.replace("```json", "").replace("```", "").strip()
+                # Validate category
+                if category not in VALID_CATEGORIES:
+                    # Try to map to closest valid category
+                    category_lower = category.lower()
+                    if "race" in category_lower or "ethnic" in category_lower:
+                        category = "Ethnicity/Race"
+                    elif "gender" in category_lower or "sexual" in category_lower:
+                        category = "Gender/Sexual"
+                    elif "religion" in category_lower:
+                        category = "Religion"
+                    elif "not" in category_lower or "safe" in category_lower:
+                        category = "Not Cyberbullying"
+                    else:
+                        category = "Other"
                 
-                # Parse JSON response
-                try:
-                    data = json.loads(response_text)
-                    category = data.get("category", "Not Cyberbullying")
-                    explanation = data.get("explanation", "")
-                    
-                    # Validate category
-                    if category not in VALID_CATEGORIES:
-                        # Try to map to closest valid category
-                        category_lower = category.lower()
-                        if "race" in category_lower or "ethnic" in category_lower:
-                            category = "Ethnicity/Race"
-                        elif "gender" in category_lower or "sexual" in category_lower:
-                            category = "Gender/Sexual"
-                        elif "religion" in category_lower:
-                            category = "Religion"
-                        elif "not" in category_lower or "safe" in category_lower:
-                            category = "Not Cyberbullying"
-                        else:
-                            category = "Other"
-                    
-                    return category, explanation
-                    
-                except json.JSONDecodeError:
-                    print(f"Failed to parse Gemini response: {response_text}")
-                    # Try to extract category from plain text
-                    for cat in VALID_CATEGORIES:
-                        if cat.lower() in response_text.lower():
-                            return cat, response_text
-                    return keyword_fallback_classifier(text)
+                return category, explanation
+                
+            except json.JSONDecodeError:
+                print(f"Failed to parse Groq response: {response_text}")
+                # Try to extract category from plain text
+                for cat in VALID_CATEGORIES:
+                    if cat.lower() in response_text.lower():
+                        return cat, response_text
+                return keyword_fallback_classifier(text)
         
         return keyword_fallback_classifier(text)
         
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 429:
-            # Rate limited - use exponential backoff and retry
-            for retry in range(max_retries):
-                wait_time = (2 ** retry) + 1  # 2, 3, 5 seconds
-                print(f"Rate limited. Waiting {wait_time}s before retry {retry + 1}/{max_retries}")
-                time.sleep(wait_time)
-                try:
-                    response = requests.post(url, headers=headers, json=payload, timeout=timeout)
-                    response.raise_for_status()
-                    result = response.json()
-                    if "candidates" in result and len(result["candidates"]) > 0:
-                        content = result["candidates"][0].get("content", {})
-                        parts = content.get("parts", [])
-                        if parts:
-                            response_text = parts[0].get("text", "").strip()
-                            response_text = response_text.replace("```json", "").replace("```", "").strip()
-                            data = json.loads(response_text)
-                            return data.get("category", "Other"), data.get("explanation", "")
-                except:
-                    continue
-            print("Gemini API rate limited, using fallback classifier")
+            print("Groq API rate limited, using fallback classifier")
             return keyword_fallback_classifier(text)
-        print(f"Error calling Gemini API: {e}")
+        print(f"Error calling Groq API: {e}")
         return keyword_fallback_classifier(text)
     except requests.RequestException as e:
-        print(f"Error calling Gemini API: {e}")
+        print(f"Error calling Groq API: {e}")
         return keyword_fallback_classifier(text)
     except Exception as e:
-        print(f"Unexpected error in Gemini classification: {e}")
+        print(f"Unexpected error in Groq classification: {e}")
         return keyword_fallback_classifier(text)
 
 
 def classify_with_api(text: str, timeout: int = 10) -> Optional[str]:
     """
     Classify text by calling an external classification API.
-    First tries Gemini, then falls back to custom API if configured.
+    Uses Groq API for classification.
     
     Returns:
         Category string or None if all APIs fail
     """
-    # Try Gemini first
-    category, explanation = classify_with_gemini(text, timeout=timeout)
+    # Try Groq
+    category, explanation = classify_with_groq(text, timeout=timeout)
     if category:
         return category
     
@@ -244,39 +232,65 @@ def get_detailed_classification(text: str) -> dict:
     
     Returns a dict with:
         - local_label: Label from local model (if available)
-        - api_label: Label from Gemini API
-        - api_explanation: Explanation from Gemini
+        - api_label: Label from Groq API
+        - api_explanation: Explanation from Groq
         - final_label: The authoritative final label
         - is_bullying: Boolean indicating if content is problematic
     """
     local_label = None
+    keyword_label = None
+    keyword_explanation = None
     
     # Try to get local prediction
     try:
         from detector import _predict_local_label
         local_label = _predict_local_label(text)
     except Exception as e:
-        print(f"Local prediction failed: {e}, using keyword fallback")
-        # Use keyword fallback for local label
-        local_label, _ = keyword_fallback_classifier(text)
+        print(f"Local prediction failed: {e}")
+        local_label = None
     
-    # Get Gemini prediction (will also fallback to keywords if API fails)
-    api_label, api_explanation = classify_with_gemini(text)
+    # ALWAYS get keyword fallback prediction (it's fast and reliable)
+    keyword_label, keyword_explanation = keyword_fallback_classifier(text)
     
-    # Final label: prefer API, fallback to local, then keyword fallback
-    if api_label:
+    # Get Groq prediction (will also fallback to keywords if API fails)
+    api_label, api_explanation = classify_with_groq(text)
+    
+    # Decision logic for final label:
+    # 1. If Groq succeeds and doesn't return keyword fallback result, use it (most accurate)
+    # 2. If keyword classifier detected something, use it (reliable for obvious cases)  
+    # 3. If local model detected something, use it
+    # 4. Otherwise, use "Not Cyberbullying"
+    
+    # Check if Groq actually responded (not just fallback)
+    groq_actually_responded = (api_label != keyword_label or 
+                                api_explanation != keyword_explanation)
+    
+    if api_label and api_label != "Not Cyberbullying" and groq_actually_responded:
+        # Groq detected bullying
         final_label = api_label
-    elif local_label:
+        final_explanation = api_explanation
+    elif keyword_label and keyword_label != "Not Cyberbullying":
+        # Keyword classifier detected bullying
+        final_label = keyword_label
+        final_explanation = keyword_explanation
+    elif local_label and local_label != "Not Cyberbullying":
+        # Local model detected bullying
         final_label = local_label
+        final_explanation = api_explanation or "Detected by local model"
     else:
-        final_label, api_explanation = keyword_fallback_classifier(text)
+        # Nothing detected
+        final_label = "Not Cyberbullying"
+        final_explanation = api_explanation or "No harmful content detected"
     
     is_bullying = final_label != "Not Cyberbullying"
+    
+    print(f"[CLASSIFICATION] Text: '{text[:50]}...'")
+    print(f"[CLASSIFICATION] Local: {local_label}, Keyword: {keyword_label}, Groq: {api_label}, Final: {final_label}")
     
     return {
         "local_label": local_label,
         "api_label": api_label,
-        "api_explanation": api_explanation,
+        "api_explanation": api_explanation or final_explanation,
         "final_label": final_label,
         "is_bullying": is_bullying,
         "bullying_type": final_label.lower() if is_bullying else None

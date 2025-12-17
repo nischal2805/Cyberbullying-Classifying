@@ -9,8 +9,8 @@ import axios from 'axios';
 interface ClassificationResult {
   text: string;
   local_model_label: string | null;
-  gemini_label: string | null;
-  gemini_explanation: string | null;
+  groq_label: string | null;
+  groq_explanation: string | null;
   final_label: string;
   is_bullying: boolean;
   bullying_type: string | null;
@@ -77,7 +77,7 @@ export default function Home() {
           >
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-dark-700 border border-dark-500 mb-8">
               <Sparkles className="w-4 h-4 text-accent-primary" />
-              <span className="text-sm text-gray-400">Powered by AI & Gemini 2.0 Flash</span>
+              <span className="text-sm text-gray-400">Powered by Advanced AI</span>
             </div>
             
             <h1 className="text-5xl md:text-7xl font-display font-bold mb-6">
@@ -87,8 +87,8 @@ export default function Home() {
             </h1>
             
             <p className="text-xl text-gray-400 max-w-2xl mx-auto mb-12">
-              Advanced dual-AI classification system that detects harmful content in real-time.
-              Combining local ML models with Gemini for unmatched accuracy.
+              Advanced AI classification system that detects harmful content in real-time.
+              Protect your community with intelligent content moderation.
             </p>
           </motion.div>
 
@@ -167,34 +167,12 @@ export default function Home() {
                         )}
                       </div>
                       
-                      {result.gemini_explanation && (
+                      {result.groq_explanation && (
                         <p className="text-gray-300 text-sm">
-                          <span className="font-semibold text-accent-primary">AI Explanation:</span>{' '}
-                          {result.gemini_explanation}
+                          <span className="font-semibold text-accent-primary">Analysis:</span>{' '}
+                          {result.groq_explanation}
                         </p>
                       )}
-                    </div>
-
-                    {/* Model Comparison */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="p-4 rounded-xl bg-dark-800 border border-dark-500">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Brain className="w-4 h-4 text-blue-400" />
-                          <span className="text-xs text-gray-500 uppercase tracking-wider">Local Model</span>
-                        </div>
-                        <p className="font-semibold text-white">
-                          {result.local_model_label || 'N/A'}
-                        </p>
-                      </div>
-                      <div className="p-4 rounded-xl bg-dark-800 border border-dark-500">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Sparkles className="w-4 h-4 text-purple-400" />
-                          <span className="text-xs text-gray-500 uppercase tracking-wider">Gemini API</span>
-                        </div>
-                        <p className="font-semibold text-white">
-                          {result.gemini_label || 'N/A'}
-                        </p>
-                      </div>
                     </div>
                   </motion.div>
                 )}
@@ -215,8 +193,8 @@ export default function Home() {
             {[
               {
                 icon: <Brain className="w-8 h-8" />,
-                title: 'Dual AI System',
-                description: 'Combines local HuggingFace models with Google Gemini for maximum accuracy'
+                title: 'AI-Powered Detection',
+                description: 'Advanced machine learning models for accurate content classification'
               },
               {
                 icon: <Zap className="w-8 h-8" />,

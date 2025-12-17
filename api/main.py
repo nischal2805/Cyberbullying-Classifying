@@ -20,7 +20,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 
 from detector import detect_cyberbullying, _predict_local_label, CLASS_LABELS
-from api_client import classify_with_gemini, get_detailed_classification
+from api_client import classify_with_groq, get_detailed_classification
 
 # Initialize FastAPI
 app = FastAPI(
@@ -55,8 +55,8 @@ class TextInput(BaseModel):
 class ClassificationResult(BaseModel):
     text: str
     local_model_label: Optional[str]
-    gemini_label: Optional[str]
-    gemini_explanation: Optional[str]
+    groq_label: Optional[str]
+    groq_explanation: Optional[str]
     final_label: str
     is_bullying: bool
     bullying_type: Optional[str]
@@ -153,7 +153,7 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     """Detailed health check"""
-    gemini_configured = bool(os.getenv("GEMINI_API_KEY"))
+    groq_configured = bool(os.getenv("GROQ_API_KEY"))
     firebase_configured = bool(os.getenv("FIREBASE_API_KEY"))
     
     return {
@@ -161,7 +161,7 @@ async def health_check():
         "timestamp": datetime.utcnow().isoformat(),
         "services": {
             "local_model": "available",
-            "gemini_api": "configured" if gemini_configured else "not_configured",
+            "groq_api": "configured" if groq_configured else "not_configured",
             "firebase": "configured" if firebase_configured else "not_configured"
         }
     }
@@ -175,8 +175,8 @@ async def classify_text(input_data: TextInput):
     """
     Classify text for cyberbullying content.
     
-    Uses both local HuggingFace model and Gemini API for dual classification.
-    The Gemini result is used as the final authoritative label.
+    Uses both local HuggingFace model and Groq API for dual classification.
+    The Groq result is used as the final authoritative label.
     """
     text = input_data.text.strip()
     
@@ -192,8 +192,8 @@ async def classify_text(input_data: TextInput):
     return ClassificationResult(
         text=text,
         local_model_label=result.get("local_label"),
-        gemini_label=result.get("api_label"),
-        gemini_explanation=result.get("api_explanation"),
+        groq_label=result.get("api_label"),
+        groq_explanation=result.get("api_explanation"),
         final_label=result.get("final_label", "Not Cyberbullying"),
         is_bullying=result.get("is_bullying", False),
         bullying_type=result.get("bullying_type")
@@ -221,21 +221,21 @@ async def classify_local_only(input_data: TextInput):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Model error: {str(e)}")
 
-@app.post("/api/classify/gemini")
-async def classify_gemini_only(input_data: TextInput):
-    """Classify using only the Gemini API"""
+@app.post("/api/classify/groq")
+async def classify_groq_only(input_data: TextInput):
+    """Classify using only the Groq API"""
     text = input_data.text.strip()
     
     if not text:
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     
-    if not os.getenv("GEMINI_API_KEY"):
-        raise HTTPException(status_code=503, detail="Gemini API not configured")
+    if not os.getenv("GROQ_API_KEY"):
+        raise HTTPException(status_code=503, detail="Groq API not configured")
     
-    category, explanation = classify_with_gemini(text)
+    category, explanation = classify_with_groq(text)
     
     if category is None:
-        raise HTTPException(status_code=500, detail="Gemini API failed to respond")
+        raise HTTPException(status_code=500, detail="Groq API failed to respond")
     
     is_bullying = category != "Not Cyberbullying"
     
@@ -245,7 +245,7 @@ async def classify_gemini_only(input_data: TextInput):
         "explanation": explanation,
         "is_bullying": is_bullying,
         "bullying_type": category.lower() if is_bullying else None,
-        "model": "gemini-2.0-flash"
+        "model": "llama-3.3-70b-versatile"
     }
 
 @app.get("/api/categories")
@@ -559,4 +559,4 @@ async def search_users(q: str, token_data: dict = Depends(verify_token)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

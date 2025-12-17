@@ -12,8 +12,8 @@ import axios from 'axios';
 interface ClassificationResult {
   text: string;
   local_model_label: string | null;
-  gemini_label: string | null;
-  gemini_explanation: string | null;
+  groq_label: string | null;
+  groq_explanation: string | null;
   final_label: string;
   is_bullying: boolean;
   bullying_type: string | null;
@@ -254,59 +254,12 @@ export default function DetectorPage() {
                     </button>
                   </div>
 
-                  {result.gemini_explanation && (
+                  {result.groq_explanation && (
                     <div className="p-4 rounded-xl bg-dark-800 border border-dark-500">
-                      <p className="text-sm text-gray-400 mb-1">AI Explanation</p>
-                      <p className="text-white">{result.gemini_explanation}</p>
+                      <p className="text-sm text-gray-400 mb-1">Analysis</p>
+                      <p className="text-white">{result.groq_explanation}</p>
                     </div>
                   )}
-                </div>
-
-                {/* Model Comparison */}
-                <div className="grid md:grid-cols-2 gap-6">
-                  {/* Local Model */}
-                  <div className="card p-6">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="p-2 rounded-lg bg-blue-500/20">
-                        <Brain className="w-5 h-5 text-blue-400" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold">Local Model</h4>
-                        <p className="text-xs text-gray-500">HuggingFace - DistilBERT</p>
-                      </div>
-                    </div>
-                    <div className={`p-4 rounded-xl ${
-                      result.local_model_label === 'Not Cyberbullying'
-                        ? 'bg-emerald-500/10 border border-emerald-500/30'
-                        : 'bg-red-500/10 border border-red-500/30'
-                    }`}>
-                      <p className="font-semibold text-lg">
-                        {result.local_model_label || 'N/A'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Gemini API */}
-                  <div className="card p-6">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="p-2 rounded-lg bg-purple-500/20">
-                        <Sparkles className="w-5 h-5 text-purple-400" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold">Gemini API</h4>
-                        <p className="text-xs text-gray-500">Google - Gemini 2.0 Flash</p>
-                      </div>
-                    </div>
-                    <div className={`p-4 rounded-xl ${
-                      result.gemini_label === 'Not Cyberbullying'
-                        ? 'bg-emerald-500/10 border border-emerald-500/30'
-                        : 'bg-red-500/10 border border-red-500/30'
-                    }`}>
-                      <p className="font-semibold text-lg">
-                        {result.gemini_label || 'N/A'}
-                      </p>
-                    </div>
-                  </div>
                 </div>
 
                 {/* Analyzed Text */}
