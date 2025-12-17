@@ -5,47 +5,107 @@ __pycache__/
 *.pyd
 .Python
 *.so
+*.egg
+*.egg-info/
 .ipynb_checkpoints/
+pip-log.txt
+pip-delete-this-directory.txt
 
 # Virtual environments
 .venv/
 venv/
 ENV/
 env/
+.virtualenv
 
 # Environment variables
 .env
+.env.local
+.env.*.local
 
-# IDEs
+# IDEs and Editors
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+.project
+.settings/
+*.sublime-workspace
+*.sublime-project
 
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
 
 # Node.js / Frontend
 node_modules/
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+frontend/build/
+frontend/dist/
 .next/
+.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+package-lock.json
 
 # Build outputs
 dist/
 build/
 *.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
 
 # Logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Model cache
+# Model cache and data files
 .cache/
 models/
+*.h5
+*.pkl
+*.joblib
+*.csv
+*.tsv
+!requirements.txt
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage/
+*.cover
+.hypothesis/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# pyenv
+.python-version
 
 # Misc
 *.bak
 *.tmp
+*.swp
+.env.backup
