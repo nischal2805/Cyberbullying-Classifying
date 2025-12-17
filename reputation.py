@@ -34,10 +34,10 @@ def decrease_reputation(user_id: str):
         
         print(f"User {user_id} reputation decreased to {new_score}/10")
         
-        # Check if user needs to be banned
-        if new_score < 5:
+        # Check if user needs to be banned (5 or below)
+        if new_score <= 5:
             db.child("users").child(user_id).update({"is_banned": True})
-            print(f"User {user_id} has been banned due to low reputation score.")
+            print(f"User {user_id} has been banned due to low reputation score (score: {new_score}).")
         
         return new_score
     else:

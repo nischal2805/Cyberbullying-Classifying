@@ -346,6 +346,10 @@ async def get_current_user(token_data: dict = Depends(verify_token)):
         if not user_data:
             raise HTTPException(status_code=404, detail="User not found")
         
+        # Check if user is banned
+        if user_data.get('is_banned', False):
+            raise HTTPException(status_code=403, detail="Your account has been banned due to repeated violations")
+        
         reputation_score = user_data.get('reputation_score', 10)
         
         # Return both snake_case and camelCase for compatibility with different frontend pages
@@ -409,8 +413,12 @@ async def create_new_post(post: PostCreate, token_data: dict = Depends(verify_to
         from database import create_post
         from auth import get_user_data
         
-        post_id = create_post(token_data['sub'], post.content, None)
+        # Check if user is banned
         user_data = get_user_data(token_data['sub'])
+        if user_data and user_data.get('is_banned', False):
+            raise HTTPException(status_code=403, detail="Your account has been banned due to repeated violations")
+        
+        post_id = create_post(token_data['sub'], post.content, None)
         
         return {
             "id": post_id,
@@ -460,6 +468,11 @@ async def add_comment(post_id: str, comment: CommentCreate, token_data: dict = D
         from database import create_comment
         from auth import get_user_data
         
+        # Check if user is banned before allowing comment
+        user_data = get_user_data(token_data['sub'])
+        if user_data and user_data.get('is_banned', False):
+            raise HTTPException(status_code=403, detail="Your account has been banned due to repeated violations")
+        
         # Detect cyberbullying in comment
         is_bullying, bullying_type = detect_cyberbullying(comment.content)
         
@@ -472,12 +485,15 @@ async def add_comment(post_id: str, comment: CommentCreate, token_data: dict = D
             bullying_type
         )
         
-        user_data = get_user_data(token_data['sub'])
-        
         # If bullying detected, decrease reputation
         if is_bullying:
             from reputation import decrease_reputation
-            decrease_reputation(token_data['sub'])
+            new_score = decrease_reputation(token_data['sub'])
+            # Re-fetch user data to check if they got banned
+            user_data = get_user_data(token_data['sub'])
+            if user_data and user_data.get('is_banned', False):
+                # Comment was created but user is now banned
+                pass  # Allow this last comment to go through
         
         return {
             "id": comment_id,
