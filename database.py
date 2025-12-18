@@ -1,8 +1,16 @@
 import pyrebase
-import streamlit as st
 from datetime import datetime
 import uuid
+import ssl
 from auth import config
+
+# SSL workaround for Firebase connections
+try:
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
+else:
+    ssl._create_default_https_context = _create_unverified_https_context
 
 firebase = pyrebase.initialize_app(config)
 db = firebase.database()

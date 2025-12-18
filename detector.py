@@ -61,9 +61,14 @@ except AttributeError:
 else:
     ssl._create_default_https_context = _create_unverified_https_context
 
-# Download NLTK data
-nltk.download('stopwords', quiet=True)
-nltk.download('punkt', quiet=True)
+# Download NLTK data with better error handling
+try:
+    nltk.download('stopwords', quiet=True)
+    nltk.download('punkt', quiet=True)
+    nltk.download('punkt_tab', quiet=True)  # Additional required package
+except Exception as e:
+    print(f"NLTK download warning: {e}")
+    # Will use fallback if needed
 
 # Alternative: Use a try-except block for the NLTK resources
 try:
@@ -95,7 +100,16 @@ device = None
 
 if TORCH_AVAILABLE:
     try:
-        model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
+        # Disable SSL verification for HuggingFace downloads
+        import os as _os
+        _os.environ['CURL_CA_BUNDLE'] = ''
+        _os.environ['REQUESTS_CA_BUNDLE'] = ''
+        
+        model = AutoModelForSequenceClassification.from_pretrained(
+            MODEL_PATH,
+            local_files_only=False,
+            trust_remote_code=True
+        )
         tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
         model.eval()  # Set model to evaluation mode
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

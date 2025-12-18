@@ -1,8 +1,16 @@
 import pyrebase
-import streamlit as st
 from firebase_admin import credentials, auth, initialize_app
 import os
+import ssl
 from dotenv import load_dotenv
+
+# SSL workaround for Firebase connections
+try:
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
+else:
+    ssl._create_default_https_context = _create_unverified_https_context
 
 # Load environment variables
 load_dotenv()
@@ -46,7 +54,7 @@ def signup(email, password, username):
         db.child("users").child(user['localId']).set(user_data)
         return user
     except Exception as e:
-        st.error(f"Error: {e}")
+        print(f"Signup Error: {e}")
         return None  # Make sure we return None on error
 
 def get_user_data(user_id):

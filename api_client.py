@@ -2,8 +2,12 @@ import os
 import requests
 import json
 import time
+import urllib3
 from typing import Optional, Tuple
 from dotenv import load_dotenv
+
+# Disable SSL warnings for self-signed certificates
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Load environment variables
 load_dotenv()
@@ -115,7 +119,8 @@ Respond with ONLY a JSON object in this exact format (no markdown, no code block
     }
     
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=timeout)
+        # Disable SSL verification to fix certificate errors
+        response = requests.post(url, headers=headers, json=payload, timeout=timeout, verify=False)
         response.raise_for_status()
         
         result = response.json()
